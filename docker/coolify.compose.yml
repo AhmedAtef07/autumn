@@ -8,19 +8,21 @@
 
 services:
   postgres:
-    image: postgres:18.3-alpine
+    image: postgres:17-alpine
     restart: unless-stopped
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-postgres}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
       - POSTGRES_DB=${POSTGRES_DB:-autumn}
+      - PGDATA=/var/lib/postgresql/data/pgdata
     volumes:
       - autumn-pg:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-autumn}']
-      interval: 5s
+      test: ['CMD-SHELL', 'pg_isready -U postgres || exit 1']
+      interval: 10s
       timeout: 5s
-      retries: 20
+      retries: 30
+      start_period: 40s
 
   redis-stack:
     image: redis/redis-stack-server:latest
@@ -69,12 +71,6 @@ services:
       - RESEND_API_KEY=${RESEND_API_KEY}
       - RESEND_DOMAIN=${RESEND_DOMAIN}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-    healthcheck:
-      test: ['CMD-SHELL', 'bun -e "fetch(\"http://localhost:8080/\").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"']
-      interval: 15s
-      timeout: 10s
-      retries: 20
-      start_period: 60s
     depends_on:
       postgres:
         condition: service_healthy
@@ -149,12 +145,6 @@ services:
       - NODE_ENV=production
       - VITE_BACKEND_URL=${VITE_BACKEND_URL}
       - VITE_FRONTEND_URL=${VITE_FRONTEND_URL}
-    healthcheck:
-      test: ['CMD-SHELL', 'bun -e "fetch(\"http://localhost:3000/\").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"']
-      interval: 20s
-      timeout: 10s
-      retries: 30
-      start_period: 180s
     depends_on:
       - server
 
