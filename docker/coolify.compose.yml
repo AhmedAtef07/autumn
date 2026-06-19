@@ -46,7 +46,7 @@ services:
     command:
       - sh
       - -c
-      - 'bun scripts/db/index.ts migrate --bootstrap > /applog/migrate.log 2>&1; echo "EXIT=$?" >> /applog/migrate.log; cat /applog/migrate.log; exit 0'
+      - 'echo "[migrate] ensure extensions $(date)" > /applog/migrate.log; bun /app/docker/db-extensions.ts >> /applog/migrate.log 2>&1; echo "[migrate] run migrations" >> /applog/migrate.log; bun scripts/db/index.ts migrate --bootstrap >> /applog/migrate.log 2>&1; echo "EXIT=$?" >> /applog/migrate.log; cat /applog/migrate.log; exit 0'
     restart: 'no'
     volumes:
       - applog:/applog
