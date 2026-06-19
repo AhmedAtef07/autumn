@@ -39,9 +39,6 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile
-      args:
-        VITE_BACKEND_URL: ${VITE_BACKEND_URL}
-        VITE_FRONTEND_URL: ${VITE_FRONTEND_URL}
     image: autumn-selfhost:latest
     working_dir: /app
     # Always exit 0 so the deploy proceeds; the real status + any error is
@@ -152,12 +149,21 @@ services:
     image: autumn-selfhost:latest
     restart: unless-stopped
     working_dir: /app
-    # vite/dist is built into the image (see Dockerfile), so just serve it with
-    # SPA fallback — starts instantly, no fragile runtime build.
-    command: ['bunx', '--bun', 'serve', '-s', 'vite/dist', '-l', '3000']
+    # Build the SPA at container start (logs to /applog/dashboard.log, served by
+    # diag), then serve vite/dist with SPA fallback. Keeps the deploy from being
+    # blocked on a long/fragile build; status is observable via the diag service.
+    command:
+      - sh
+      - -c
+      - 'echo "[dash] build start $(date)" > /applog/dashboard.log; (bunx --bun vite build --root vite --config vite/vite.config.ts >> /applog/dashboard.log 2>&1; echo "BUILD_EXIT=$?" >> /applog/dashboard.log); ls -la vite/dist >> /applog/dashboard.log 2>&1; echo "[dash] serving $(date)" >> /applog/dashboard.log; exec bunx --bun serve -s vite/dist -l 3000'
+    volumes:
+      - applog:/applog
     environment:
       - SERVICE_FQDN_DASHBOARD_3000
+      - CI=1
       - NODE_ENV=production
+      - VITE_BACKEND_URL=${VITE_BACKEND_URL}
+      - VITE_FRONTEND_URL=${VITE_FRONTEND_URL}
     depends_on:
       - server
 
