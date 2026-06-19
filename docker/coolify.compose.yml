@@ -159,6 +159,10 @@ services:
       - sh
       - -c
       - 'echo "[dash] build start $(date)" > /applog/dashboard.log; (bunx --bun vite build >> /applog/dashboard.log 2>&1; echo "BUILD_EXIT=$?" >> /applog/dashboard.log); ls -la dist >> /applog/dashboard.log 2>&1; echo "[dash] serving $(date)" >> /applog/dashboard.log; exec bun /app/docker/serve-spa.ts /app/vite/dist 3000'
+    # The shared image EXPOSEs 8080; declare 3000 so Coolify/Traefik route the
+    # dashboard FQDN to the SPA server (not the image's default 8080).
+    expose:
+      - '3000'
     volumes:
       - applog:/applog
     environment:
