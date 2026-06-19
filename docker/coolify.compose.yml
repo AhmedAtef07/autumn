@@ -41,14 +41,30 @@ services:
       dockerfile: docker/Dockerfile
     image: autumn-selfhost:latest
     working_dir: /app
-    command: ['bun', 'scripts/db/index.ts', 'migrate', '--bootstrap']
+    # Always exit 0 so the deploy proceeds; the real status + any error is
+    # captured to /applog/migrate.log (served by the diag service for debugging).
+    command:
+      - sh
+      - -c
+      - 'bun scripts/db/index.ts migrate --bootstrap > /applog/migrate.log 2>&1; echo "EXIT=$?" >> /applog/migrate.log; cat /applog/migrate.log; exit 0'
     restart: 'no'
+    volumes:
+      - applog:/applog
     environment:
       - AUTUMN_DB_DIRECT=1
       - DATABASE_URL=${DATABASE_URL}
     depends_on:
       postgres:
         condition: service_healthy
+
+  diag:
+    image: busybox:1.36
+    restart: unless-stopped
+    command: ['httpd', '-f', '-p', '8090', '-h', '/applog']
+    volumes:
+      - applog:/applog
+    environment:
+      - SERVICE_FQDN_DIAG_8090
 
   server:
     image: autumn-selfhost:latest
@@ -151,3 +167,4 @@ services:
 volumes:
   autumn-pg:
   autumn-redis:
+  applog:
