@@ -15,6 +15,10 @@ export const ALLOWED_ORIGINS = [
 	"https://api.staging.useautumn.com",
 	"https://checkout.useautumn.com",
 	"https://localhost:8080",
+	// self-host: allow the dashboard + API origins from env (production too)
+	...[process.env.CLIENT_URL, process.env.BETTER_AUTH_URL].filter(
+		(o): o is string => !!o,
+	),
 ];
 
 /** Allow any *.localhost or localhost origin in dev for multi-worktree support */

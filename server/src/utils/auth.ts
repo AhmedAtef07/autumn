@@ -209,6 +209,10 @@ const options = {
 			"https://staging.useautumn.com",
 			"https://*.useautumn.com",
 		];
+		// self-host: always trust the configured dashboard + API origins,
+		// including in production (upstream short-circuits here otherwise).
+		if (process.env.CLIENT_URL) origins.push(process.env.CLIENT_URL);
+		if (process.env.BETTER_AUTH_URL) origins.push(process.env.BETTER_AUTH_URL);
 		if (process.env.NODE_ENV === "production") return origins;
 
 		// Worktree ports follow worktreeOffset = (N-1)*100; accept any localhost

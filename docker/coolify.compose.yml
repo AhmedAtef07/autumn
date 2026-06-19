@@ -1,0 +1,163 @@
+# Production self-host compose for Coolify (build_pack=dockercompose).
+# Builds the bun monorepo image ONCE (server service) and reuses it for
+# workers / cron / migrate / dashboard. Plus postgres + redis-stack.
+#
+# Two FQDNs (Traefik wildcard *.atef.cc):
+#   https://autumn.atef.cc      -> dashboard (vite SPA, port 3000)
+#   https://autumn-api.atef.cc  -> server    (API + better-auth, port 8080)
+
+services:
+  postgres:
+    image: postgres:18.3-alpine
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-autumn}
+    volumes:
+      - autumn-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-autumn}']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis-stack:
+    image: redis/redis-stack-server:latest
+    restart: unless-stopped
+    volumes:
+      - autumn-redis:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  migrate:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: autumn-selfhost:latest
+    working_dir: /app
+    command: ['bun', 'scripts/db/index.ts', 'migrate', '--bootstrap']
+    restart: 'no'
+    environment:
+      - AUTUMN_DB_DIRECT=1
+      - DATABASE_URL=${DATABASE_URL}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  server:
+    image: autumn-selfhost:latest
+    restart: unless-stopped
+    working_dir: /app/server
+    command: ['bun', 'start']
+    environment:
+      - SERVICE_FQDN_SERVER_8080
+      - NODE_ENV=production
+      - SERVER_PORT=8080
+      - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}
+      - BETTER_AUTH_URL=${BETTER_AUTH_URL}
+      - CLIENT_URL=${CLIENT_URL}
+      - ENCRYPTION_IV=${ENCRYPTION_IV}
+      - ENCRYPTION_PASSWORD=${ENCRYPTION_PASSWORD}
+      - DATABASE_URL=${DATABASE_URL}
+      - CRITICAL_DATABASE_URL=${CRITICAL_DATABASE_URL}
+      - CACHE_URL=${CACHE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - RESEND_API_KEY=${RESEND_API_KEY}
+      - RESEND_DOMAIN=${RESEND_DOMAIN}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+    healthcheck:
+      test: ['CMD-SHELL', 'bun -e "fetch(\"http://localhost:8080/\").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"']
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis-stack:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  workers:
+    image: autumn-selfhost:latest
+    restart: unless-stopped
+    working_dir: /app/server
+    command: ['bun', 'src/workers.ts']
+    environment:
+      - NODE_ENV=production
+      - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}
+      - BETTER_AUTH_URL=${BETTER_AUTH_URL}
+      - CLIENT_URL=${CLIENT_URL}
+      - ENCRYPTION_IV=${ENCRYPTION_IV}
+      - ENCRYPTION_PASSWORD=${ENCRYPTION_PASSWORD}
+      - DATABASE_URL=${DATABASE_URL}
+      - CRITICAL_DATABASE_URL=${CRITICAL_DATABASE_URL}
+      - CACHE_URL=${CACHE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - RESEND_API_KEY=${RESEND_API_KEY}
+      - RESEND_DOMAIN=${RESEND_DOMAIN}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis-stack:
+        condition: service_healthy
+
+  cron:
+    image: autumn-selfhost:latest
+    restart: unless-stopped
+    working_dir: /app/server
+    command: ['bun', 'src/cron.ts']
+    environment:
+      - NODE_ENV=production
+      - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}
+      - BETTER_AUTH_URL=${BETTER_AUTH_URL}
+      - CLIENT_URL=${CLIENT_URL}
+      - ENCRYPTION_IV=${ENCRYPTION_IV}
+      - ENCRYPTION_PASSWORD=${ENCRYPTION_PASSWORD}
+      - DATABASE_URL=${DATABASE_URL}
+      - CRITICAL_DATABASE_URL=${CRITICAL_DATABASE_URL}
+      - CACHE_URL=${CACHE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - RESEND_API_KEY=${RESEND_API_KEY}
+      - RESEND_DOMAIN=${RESEND_DOMAIN}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis-stack:
+        condition: service_healthy
+
+  dashboard:
+    image: autumn-selfhost:latest
+    restart: unless-stopped
+    working_dir: /app
+    # Build the SPA at container start with the prod backend URL baked in, then
+    # serve it with SPA fallback. (vite reads process.env.VITE_* at build time.)
+    command:
+      - sh
+      - -c
+      - 'bunx --bun vite build --root vite --config vite/vite.config.ts && bunx --bun serve -s vite/dist -l 3000'
+    environment:
+      - SERVICE_FQDN_DASHBOARD_3000
+      - CI=1
+      - NODE_ENV=production
+      - VITE_BACKEND_URL=${VITE_BACKEND_URL}
+      - VITE_FRONTEND_URL=${VITE_FRONTEND_URL}
+    healthcheck:
+      test: ['CMD-SHELL', 'bun -e "fetch(\"http://localhost:3000/\").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"']
+      interval: 20s
+      timeout: 10s
+      retries: 30
+      start_period: 180s
+    depends_on:
+      - server
+
+volumes:
+  autumn-pg:
+  autumn-redis:
