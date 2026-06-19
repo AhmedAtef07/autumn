@@ -55,6 +55,16 @@ ENV NODE_ENV=production
 COPY --from=deps /app ./
 COPY . .
 
+# Build the dashboard SPA at image-build time so the dashboard container serves
+# pre-built static files instantly (no fragile runtime build). VITE_* are baked
+# in here, so they must be passed as build args by the compose `build.args`.
+ARG VITE_BACKEND_URL
+ARG VITE_FRONTEND_URL
+ENV VITE_BACKEND_URL=${VITE_BACKEND_URL}
+ENV VITE_FRONTEND_URL=${VITE_FRONTEND_URL}
+ENV CI=1
+RUN bunx --bun vite build --root vite --config vite/vite.config.ts
+
 EXPOSE 8080
 
 WORKDIR /app/server
