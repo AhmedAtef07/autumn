@@ -154,7 +154,9 @@ services:
     command:
       - sh
       - -c
-      - 'bunx --bun vite build --root vite --config vite/vite.config.ts && bunx --bun serve -s vite/dist -l 3000'
+      - 'echo "[dash] build start $(date)" > /applog/dashboard.log; (bunx --bun vite build --root vite --config vite/vite.config.ts >> /applog/dashboard.log 2>&1; echo "BUILD_EXIT=$?" >> /applog/dashboard.log); ls -la vite/dist >> /applog/dashboard.log 2>&1; echo "[dash] serving" >> /applog/dashboard.log; bunx --bun serve -s vite/dist -l 3000'
+    volumes:
+      - applog:/applog
     environment:
       - SERVICE_FQDN_DASHBOARD_3000
       - CI=1
